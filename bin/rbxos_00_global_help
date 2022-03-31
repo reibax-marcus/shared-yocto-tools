@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# Include common bash functions
+# shellcheck source=/dev/null
+. "${RBXOS_PRJ_TOPDIR}/shared_yocto_tools/bin/inc/funcs.inc"
+
+log_info_msg "
+* rbxos_00_global_help - Print list of main commands shared between platforms
+* rbxos_list_machines  - List of machine definition files. You can use the name for the MACHINE variable. Only a few of them have been validated in rbxos.
+* rbxos_show_version   - Print release version string
+* rbxos_buildlist_help - Print help about how to build the main build lists
+"

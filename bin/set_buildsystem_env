@@ -1,0 +1,332 @@
+# Configuration variables needed for this script
+# RBXOS_PRJ_WORKDIR - Mandatory allways
+# Configuration variables statically set until we support more machines:
+# RBXOS_PRJ_MACHINE - Mandatory on first run
+
+# Explain usage
+rbxos_usage()
+{
+    echo -e "\nUsage: [MACHINE=yourselectedtargetmachine] source $1 <build-dir>
+
+    [MACHINE=yourselectedtargetmachine]: Selected target marchine name (optional)
+    <build-dir>: specifies the build directory location (required)
+        "
+}
+
+# List available machines
+rbxos_usage_machine() {
+    echo
+    echo -e "If undefined, this script will set \$MACHINE to '${RBXOS_DEFAULT_MACHINE}'
+    "
+
+    echo -e "Supported machines: 
+    "
+    grep -v '^ *#' < "${RBXOS_PRJ_TOPDIR}/local_yocto_tools/conf/machine.path.list" | while IFS= read -r machinedir
+    do
+        find  "${machinedir}" -name "*.conf" |  sed s/\.conf//g | sed -r 's/^.+\///' | while IFS= read -r machine
+        do
+            echo "    - $machine"
+        done
+    done
+
+}
+
+# Clean up environment on error
+rbxos_clean_up_error()
+{
+    for var in $(env | grep "^RBXOS_" | grep -v "RBXOS_ORGPATH" | cut -d= -f1) ; do
+        unset "$var"
+    done
+    # shellcheck disable=SC2013
+    for func in $(grep "^rbxos_.*()" "$1" | cut -d\( -f1 | grep -v "rbxos_clean_up_error") ; do
+        unset "$func"
+    done
+    unset rbxos_clean_up_error
+}
+
+# Clean up environment on successful execution
+rbxos_clean_up_ok() {
+    unset rbxos_usage
+    unset rbxos_usage_machine
+    unset rbxos_clean_up_error
+    unset rbxos_clean_up_ok
+}
+
+# Verify if the script is being sourced
+[[ $_ != "$0" ]]  || {
+    echo "ERROR: This script needs to be sourced." >&2
+    exit 1
+}
+
+# Verify that I am not root
+if [ "$(whoami)" = "root" ]; then
+    echo "ERROR: do not use the BSP as root. Exiting..." >&2
+    return 1
+fi
+
+# Verify we are on a bash shell
+if [ "$0" != "/bin/bash" ] ; then
+    echo "ERROR: /bin/bash needs to be the default shell for this build system" >&2
+    return 1
+fi
+
+# This script name
+PROGNAME="${BASH_SOURCE[0]}"
+
+# Verify if we are in the directory where the script lives. This will be our RBXOS_PRJ_TOPDIR
+if [ ! -f "./shared_yocto_tools/bin/set_buildsystem_env"  ] || [ ! -f "./set_buildsystem_env" ] ; then
+    echo "ERROR: This script must be sourced from its own path" >&2
+    rbxos_clean_up_error "$PROGNAME"
+    return 1
+fi
+
+# Set project top dir (Yocto infrastructure)
+RBXOS_PRJ_TOPDIR="$(pwd)"
+export RBXOS_PRJ_TOPDIR
+
+# Load default machine
+# shellcheck source=/dev/null
+. "${RBXOS_PRJ_TOPDIR}/local_yocto_tools/conf/machine.conf.env"
+
+# Process arguments
+if [ $# != 1 ] ; then
+    rbxos_usage "$PROGNAME"
+    rbxos_usage_machine
+    rbxos_clean_up_error "$PROGNAME"
+    return 1
+fi
+if [ "$1" = "-h" ] || [ "$1" = "--help" ] ; then
+    rbxos_usage "$PROGNAME"
+    rbxos_usage_machine
+    rbxos_clean_up_error "$PROGNAME"
+    return 0
+fi
+realpath -m -q "$1" >/dev/null 2>/dev/null || {
+    rbxos_usage "$PROGNAME"
+    rbxos_usage_machine
+    rbxos_clean_up_error "$PROGNAME"
+    return 1
+}
+unset RBXOS_PRJ_WORKDIR
+RBXOS_PRJ_WORKDIR="$(realpath -m -q "$1")"
+export RBXOS_PRJ_WORKDIR
+if [ "${RBXOS_PRJ_WORKDIR##$RBXOS_PRJ_TOPDIR}" != "${RBXOS_PRJ_WORKDIR}" ] ; then
+    echo "ERROR: Workdir cannot be a subdirectory of ${RBXOS_PRJ_TOPDIR}"
+    rbxos_usage "$PROGNAME"
+    rbxos_usage_machine
+    rbxos_clean_up_error "$PROGNAME"
+    return 1
+fi
+echo "Selected work directory: ${RBXOS_PRJ_WORKDIR}"
+
+# Back up PATH variable
+if [ "${RBXOS_ORGPATH}" = "" ] ; then
+    RBXOS_ORGPATH="${PATH}"
+    export RBXOS_ORGPATH
+fi
+
+# Export new PATH variable
+PATH="${RBXOS_PRJ_TOPDIR}/local_yocto_tools/bin:${RBXOS_PRJ_TOPDIR}/shared_yocto_tools/bin:$RBXOS_ORGPATH"
+export PATH
+
+# Export PATH additions
+RBXOS_PATH_ADDITIONS="$(echo "$PATH" | sed "s,$RBXOS_ORGPATH,,g" | sed 's,^:,,g' | sed 's,:$,,g')"
+export RBXOS_PATH_ADDITIONS
+
+# Load shared variables aliases and functions
+# shellcheck source=/dev/null
+. "${RBXOS_PRJ_TOPDIR}/shared_yocto_tools/bin/development-environment"
+RBXOS_RETURN_VALUE=$?
+if [ ${RBXOS_RETURN_VALUE} -ne 0 ] ; then
+    rbxos_clean_up_error "$PROGNAME"
+    return $RBXOS_RETURN_VALUE
+fi
+
+# Test local system requirements and load local variables aliases and functions
+# shellcheck source=/dev/null
+. "${RBXOS_PRJ_TOPDIR}/local_yocto_tools/bin/development-environment"
+RBXOS_RETURN_VALUE=$?
+if [ ${RBXOS_RETURN_VALUE} -ne 0 ] ; then
+    rbxos_clean_up_error "$PROGNAME"
+    return $RBXOS_RETURN_VALUE
+fi
+
+# Init MACHINE variable
+if [ "${MACHINE}" = "" ] ; then
+    MACHINE="${RBXOS_DEFAULT_MACHINE}"
+    export MACHINE
+fi
+
+# Load Open Embedded environment and initialize generic work directory
+# shellcheck source=/dev/null
+. "${RBXOS_OEROOT}/oe-init-build-env" "${RBXOS_PRJ_WORKDIR}" >/dev/null
+if [ ${RBXOS_RETURN_VALUE} -ne 0 ] ; then
+    # shellcheck disable=SC2164
+    cd "${RBXOS_PRJ_TOPDIR}"
+    rbxos_clean_up_error "$PROGNAME"
+    return $RBXOS_RETURN_VALUE
+fi
+
+# Setup prompt
+if [ "$PRESETUP_PS1" = "" ] || [ "$PRESETUP_MACHINE" != "$MACHINE" ] ; then
+    export PRESETUP_PS1="$PS1"
+    export PRESETUP_MACHINE="$MACHINE"
+    export PS1="($MACHINE)$PRESETUP_PS1"
+fi
+
+# We should now be in the workdir, verify that everything seems normal
+if [ ! -e conf/local.conf ] ; then
+    echo "ERROR: Expected configuration file not found. Exiting." >&2
+    # shellcheck disable=SC2164
+    cd "${RBXOS_PRJ_TOPDIR}"
+    rbxos_clean_up_error "$PROGNAME"
+    return 1
+fi
+
+# Backup Open Embedded configuration file
+mv conf/local.conf conf/local.conf.oeoriginal
+
+# Apply local configuration
+cp "${RBXOS_PRJ_TOPDIR}/local_yocto_tools/conf/local.conf" "${RBXOS_PRJ_WORKDIR}/conf/local.conf" || {
+    echo "ERROR while trying to copy configuration file. Exiting." >&2
+    # shellcheck disable=SC2164
+    cd "${RBXOS_PRJ_TOPDIR}"
+    rbxos_clean_up_error "$PROGNAME"
+    return 1
+}
+
+# Apply layer configuration
+cp "${RBXOS_PRJ_TOPDIR}/local_yocto_tools/conf/bblayers.conf" "${RBXOS_PRJ_WORKDIR}/conf/" || {
+    echo "ERROR while trying to copy configuration file. Exiting." >&2
+    # shellcheck disable=SC2164
+    cd "${RBXOS_PRJ_TOPDIR}"
+    rbxos_clean_up_error "$PROGNAME"
+    return 1
+}
+
+# Change settings according to environment
+sed -e "s,MACHINE ??=.*,MACHINE ??= '$MACHINE',g" \
+    -i "${RBXOS_PRJ_WORKDIR}/conf/local.conf"
+
+# Keep user changes in these settings
+# rm_work enabled by default. User must comment out the line if it wants to disable the feature, or it will be added.
+if ! grep -q "rm_work" "${RBXOS_PRJ_WORKDIR}/conf/local.conf.append" 2>/dev/null ; then
+    {
+        echo
+        echo '# Remove tmp work files after work is done'
+        echo '# If you want to change this option you need to manually edit'
+        echo '# both local.conf and local.conf.append files and comment out the line'
+        echo 'INHERIT += "rm_work"'
+        echo
+        echo '# Support remote menuconfig and devshell'
+        echo 'OE_TERMINAL = "tmux-running"'
+    } >> "${RBXOS_PRJ_WORKDIR}/conf/local.conf.append"
+fi
+
+# Look for configuration customizations
+find "${RBXOS_PRJ_WORKDIR}/conf" \
+    -name "*.prepend" -or -name "*.append" -or -name "*.override" 2>/dev/null | while IFS= read -r file 
+do
+    echo "${file}" | grep -q '.prepend$' &&
+        {
+            basefile=$(basename "${file}" ".prepend")
+            if [ ! -e "${RBXOS_PRJ_WORKDIR}/conf/${basefile}.override" ] ; then
+                mv "${RBXOS_PRJ_WORKDIR}/conf/${basefile}" "${RBXOS_PRJ_WORKDIR}/conf/${basefile}.base"
+                cat "${file}" > "${RBXOS_PRJ_WORKDIR}/conf/${basefile}"
+                cat "${RBXOS_PRJ_WORKDIR}/conf/${basefile}.base" >>  "${RBXOS_PRJ_WORKDIR}/conf/${basefile}"
+                rm -fr "${RBXOS_PRJ_WORKDIR}/conf/${basefile}.base"
+            fi
+            continue
+        }
+    echo "${file}" | grep -q '.append$' &&
+        {
+            basefile=$(basename "${file}" ".append")
+            if [ ! -e "${RBXOS_PRJ_WORKDIR}/conf/${basefile}.override" ] ; then
+                cat "${file}" >> "${RBXOS_PRJ_WORKDIR}/conf/${basefile}"
+            fi
+            continue
+        }
+    echo "${file}" | grep -q '.override$' &&
+        {
+            basefile=$(basename "${file}" ".override")
+            rm -f "${RBXOS_PRJ_WORKDIR}/conf/${basefile}"
+            cat "${file}" > "${RBXOS_PRJ_WORKDIR}/conf/${basefile}"
+            continue
+        }
+done
+
+# Necessary to have ikusiworkspace and devtool workspace layers in bblayers
+devtool status &>/dev/null
+
+# Save environment for external usecases
+cat << EOF > "${RBXOS_PRJ_WORKDIR}/rbxos_load_workenv"
+# Verify if the script is being sourced
+[[ \$_ != "\$0" ]]  || {
+    echo "ERROR: This script needs to be sourced." >&2
+    exit 1
+}
+
+# Back up PATH variable
+if [ "\${RBXOS_ORGPATH}" = "" ] ; then
+    RBXOS_ORGPATH="\${PATH}"
+    export RBXOS_ORGPATH
+fi
+
+EOF
+export -p | grep -v  \
+    -e "PWD=" \
+    -e "OLDPWD=" \
+    -e "SHELL=" \
+    -e "SCHROOT_.*=" \
+    -e "HOME=" \
+    -e "HOSTNAME=" \
+    -e "LESS.*=" \
+    -e "LS_COLORS=" \
+    -e "RBXOS_ORGPATH=" \
+    -e "PATH=" \
+    >> "${RBXOS_PRJ_WORKDIR}/rbxos_load_workenv"
+
+# External usecases will also need to regenerate a useful PATH varialbe and restore aliases
+cat << EOF >> "${RBXOS_PRJ_WORKDIR}/rbxos_load_workenv"
+export PATH="\${RBXOS_PATH_ADDITIONS}:\${RBXOS_ORGPATH}"
+
+# Load shared variables aliases and functions
+# shellcheck source=/dev/null
+. "\${RBXOS_PRJ_TOPDIR}/shared_yocto_tools/bin/development-environment"
+EOF
+
+# Determine if we are running inside a container
+rbxos_in_docker && {
+    cat << EOF >> "${RBXOS_PRJ_WORKDIR}/rbxos_load_workenv"
+
+rbxos_in_docker || {
+    echo "WARNING!!! This environment was generated inside a docker container."
+    echo "WARNING!!! Some of the commands might not work as expected under this environment."
+}
+EOF
+}
+
+# Print welcome message
+cat <<EOF
+
+Welcome to RbxOS BSP
+
+The Yocto Project has extensive documentation about OE including a
+reference manual which can be found at:
+http://yoctoproject.org/documentation
+
+For more information about OpenEmbedded see their website:
+
+    http://www.openembedded.org/
+
+Your build environment has been configured with:
+
+    MACHINE=$MACHINE
+    DISTRO=$DISTRO
+    BUILDDIR=$BUILDDIR
+    RBXOS_PRJ_TOPDIR=$RBXOS_PRJ_TOPDIR
+
+EOF
+
+rbxos_00_local_help
+rbxos_clean_up_ok

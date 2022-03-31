@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Include common bash functions
+# shellcheck source=/dev/null
+. "${RBXOS_PRJ_TOPDIR}/shared_yocto_tools/bin/inc/funcs.inc"
+
+echo "If you are a yocto developer and you want to add or tweak this variables \
+you should do it in ${RBXOS_PRJ_TOPDIR}/local_yocto_tools/bin/development-environment
+"
+
+echo "If you are a yocto user, you can run a command like this to compile the \
+build list:
+
+bitbake \$RBXOS_BUILDLIST_RELEASE
+"
+
+echo "List of buildlists available for this system:
+"
+env | grep "^RBXOS_BUILDLIST_" | cut -d= -f1

@@ -1,0 +1,11 @@
+# Put system requirement tests here
+
+# Put exported variables here
+# Make variables visible to bitbake
+export BB_ENV_EXTRAWHITE="${BB_ENV_EXTRAWHITE} RBXOS_PRJ_TOPDIR RBXOS_PRJ_WORKDIR RBXOS_PRJ_VERSIONOVERRIDE"
+
+# Put aliases for sourced scripts here
+# alias rbxos_sourced_script=". ${RBXOS_PRJ_TOPDIR}/shared_yocto_tools/bin/rbxos_sourced_script"
+alias rbxos_in_docker='grep "memory:" /proc/1/cgroup | grep -q "/docker"'
+
+# Put helper bash functions here

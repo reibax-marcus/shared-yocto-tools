@@ -1,0 +1,31 @@
+#!/bin/bash
+
+#Expected tag format (in git repository):
+# 0.0.0+alpha1
+#Expected version format examples for get_version_from_git():
+# 0.0.0+alpha1+d20141203
+# 0.0.0+alpha0.645.gb7c11ab+d20141203
+#
+
+# Test environment
+if [ -z "${RBXOS_PRJ_TOPDIR}" ] ; then
+    echo "ERROR: RBXOS_PRJ_TOPDIR variable should be defined. Make sure development environment is loaded" >&2
+    exit 2
+fi
+
+# Include common bash functions
+# shellcheck source=/dev/null
+. "${RBXOS_PRJ_TOPDIR}/shared_yocto_tools/bin/inc/funcs.inc"
+
+cd "${RBXOS_PRJ_TOPDIR}" || { log_error_msg "Couldn't find project top directory ${RBXOS_PRJ_TOPDIR}" ; exit 2 ; }
+RBXOS_SW_VERSION="$(git describe | sed 's/-/./g' || echo ERROR)"
+if [ "${RBXOS_SW_VERSION}" = "ERROR" ] || ! git describe >/dev/null 2>/dev/null ; then
+    log_error_msg "Unexpected error while extracting system version"
+    exit 2
+fi
+# shellcheck disable=SC2046
+if [ $(git status -s | wc -l) -ne 0 ] ; then
+    RBXOS_SW_VERSION="${RBXOS_SW_VERSION}mod"
+fi
+RBXOS_SW_VERSION="${RBXOS_SW_VERSION}+d$(date -d "$(git show -s --format=%ci)" "+%Y%m%d")"
+echo "${RBXOS_SW_VERSION}"

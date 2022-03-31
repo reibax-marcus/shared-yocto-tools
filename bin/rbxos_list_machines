@@ -1,0 +1,3 @@
+#!/bin/bash
+
+for machine in $(for dir in $(find "$RBXOS_PRJ_TOPDIR" -type d -name machine) ; do find $dir -name *.conf ; done) ; do basename -s .conf $machine ; done
